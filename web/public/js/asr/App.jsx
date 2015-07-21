@@ -11,7 +11,7 @@ var SystemInfoStore = Reflux.createStore({
     _setStat: function (stats) {
         if (!_.isEqual(this.stats, stats)) {
 
-            stats.date = moment(Date.now()).format('YYYY-MM-DD-SS');
+            stats.date = new Date();
 
             if (Array.isArray(stats.cpus) && stats.cpus.length) {
                 stats.cpus = stats.cpus[0].model;
@@ -108,30 +108,86 @@ var SystemInfo = React.createClass({
 var GraphContainer = React.createClass({
     mixins: [Reflux.listenTo(AppActions.systemInfoUpdated, 'onSystemInfoUpdated')],
     onSystemInfoUpdated: function (stats) {
-        this.lyne.dataQueue(Number(stats[this.props.metric].replace('%', '')));
+        var entry = {date: stats.date};
+        entry[this.props.metric] = Number(stats[this.props.metric].replace(/[^0-9\.]/g, ''));
+        this.data.push(entry);
+
+        if(!this.addedListener){
+
+            var chart = this.chart;
+            var data = this.data;
+
+            chart.addListener("dataUpdated", function () {
+                var offset = Math.max(Math.min(data.length, 10), 1);
+                console.log(Math.max(data.length - offset, 0), Math.max(data.length - 1, 0), data.length);
+                chart.zoomToIndexes(Math.max(data.length - offset, 0), Math.max(data.length - 1, 0));
+            });
+
+            this.addedListener = true;
+        }
+
+        this.chart.validateData();
     },
     shouldComponentUpdate: function () {
         return false;
     },
     componentDidMount: function () {
-        this.lyne = new Lyne.Graph([0,0,0,0,0,0,0 ], React.findDOMNode(this.refs.graph), _.extend({}, Lyne.Themes.Dark, {
-            yAxisLabelFontFamily: "Open Sans, sans-serif",
-            xAxisLabelFontFamily: "Open Sans, sans-serif",
-            plotAreaStrokeColorStart : this.props.color,
-            plotAreaStrokeColorStop : this.props.color,
-            plotAreaFillColorStart : '#111',
-            plotAreaFillColorStop : this.props.bgColor,
-            xAxisLabelFontSize : "14px",
-            yAxisLabelFontSize : "14px",
-            plotPointFillStyle: this.props.color,
-            plotPointStrokeStyle : '#111',
-            plotPointLineWidth: 4
 
-        }));
+        this.data = [];
+
+        this.chart = AmCharts.makeChart(React.findDOMNode(this.refs.graph), {
+            "type": "serial",
+            "theme": "black",
+            'autoMarginOffset': 5,
+            "dataProvider": this.data,
+            "valueAxes": [{
+                "dashLength": 1,
+                "position": "left"
+            }],
+            "graphs": [{
+                "id": "g1",
+                "title": this.props.metric.toUpperCase(),
+                "type": "smoothedLine",
+                "lineColor": this.props.color,
+                "fillColors": this.props.color,
+                "lineThickness": 2,
+                "fillAlphas": 0.4,
+                "valueField": this.props.metric,
+                "balloonText": '<div class="balloon"><div class="value">[[value]]</div><div class="title">[[title]]</div></div>'
+            }],
+            chartScrollbar: {
+                "graph": "g1",
+                "scrollbarHeight": 20,
+                "backgroundAlpha": 0,
+                "selectedBackgroundAlpha": 0.3,
+                "selectedBackgroundColor": "#888888",
+                "graphFillAlpha": 0.2,
+                "graphLineAlpha": 0.0,
+                "selectedGraphFillAlpha": 0.1,
+                'dragIconHeight': 20,
+                "autoGridCount": true,
+                'dragIconWidth': 20,
+                "selectedGraphLineAlpha": 0,
+                "color": "#888"
+            },
+            "chartCursor": {
+                "valueLineEnabled": true,
+                "valueLineBalloonEnabled": true,
+                "valueLineAlpha": 0.5,
+                "fullWidth": true,
+                "cursorAlpha": 0.05
+            },
+            "categoryField": "date",
+            "categoryAxis": {
+                "parseDates": true,
+                "minPeriod": '1ss'
+            },
+            "legend": {}
+        });
     },
     render: function () {
         return (
-            <canvas className="full-abs" ref='graph'></canvas>
+            <div className="full-abs amchart" ref='graph'></div>
         )
     }
 });
@@ -146,10 +202,13 @@ var App = React.createClass({
                 <div className='box'>
                     <div className='full flex vertical'>
                         <div className="full">
-                            <GraphContainer metric='memory usage' color="#02A0F1" bgColor="rgba(2, 160, 241, 0.5)"/>
+                            <GraphContainer metric='memory usage' color="#02A0F1"/>
                         </div>
                         <div className="full" style={{borderTop:'1px solid rgba(255,255,255,0.2)'}}>
-                            <GraphContainer metric='cpu usage' color="#11EA00" bgColor="rgba(17, 234, 0, 0.5)"/>
+                            <GraphContainer metric='cpu usage' color="#11EA00"/>
+                        </div>
+                        <div className="full" style={{borderTop:'1px solid rgba(255,255,255,0.2)'}}>
+                            <GraphContainer metric='free memory' color="#D721EC"/>
                         </div>
                     </div>
                 </div>
